@@ -1,0 +1,70 @@
+[gd_scene format=3 uid="uid://dkdbt4en6l4cg"]
+
+[ext_resource type="Script" path="res://game/world/world_view.gd" id="1_5hesp"]
+[ext_resource type="Script" path="res://game/world/zone_view.gd" id="2_ncs2d"]
+[ext_resource type="Script" path="res://game/world/pin_layer.gd" id="3_io0hq"]
+[ext_resource type="Script" path="res://game/world/day_night.gd" id="4_prd21"]
+[ext_resource type="Script" path="res://game/world/weather_fx.gd" id="5_hmqds"]
+[ext_resource type="Script" path="res://game/ui/hud.gd" id="6_3luqe"]
+[ext_resource type="Script" path="res://game/ui/hud_draw.gd" id="7_n8kw4"]
+[ext_resource type="Script" path="res://game/ui/wheel.gd" id="8_4b3f4"]
+[ext_resource type="Script" path="res://game/ui/map_panel.gd" id="9_10d7r"]
+[ext_resource type="Script" path="res://game/ui/inventory_panel.gd" id="10_mqk4b"]
+
+[node name="Game" type="Node2D" unique_id=1898434824]
+script = ExtResource("1_5hesp")
+
+[node name="Zone" type="Node2D" parent="." unique_id=1194770611]
+script = ExtResource("2_ncs2d")
+
+[node name="Entities" type="Node2D" parent="." unique_id=1609017416]
+y_sort_enabled = true
+
+[node name="Pins" type="Node2D" parent="." unique_id=1694033036]
+script = ExtResource("3_io0hq")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1013473574]
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0
+
+[node name="DayNight" type="CanvasModulate" parent="." unique_id=589775359]
+script = ExtResource("4_prd21")
+
+[node name="WeatherLayer" type="CanvasLayer" parent="." unique_id=500751738]
+
+[node name="WeatherFx" type="Node2D" parent="WeatherLayer" unique_id=997951071]
+script = ExtResource("5_hmqds")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=1209146210]
+layer = 5
+script = ExtResource("6_3luqe")
+
+[node name="Overlay" type="Control" parent="HUD" unique_id=964242637]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("7_n8kw4")
+
+[node name="Wheel" type="Control" parent="HUD" unique_id=796208894]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("8_4b3f4")
+
+[node name="Map" type="Control" parent="HUD" unique_id=1173644490]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("9_10d7r")
+
+[node name="Inventory" type="Control" parent="HUD" unique_id=22448964]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("10_mqk4b")

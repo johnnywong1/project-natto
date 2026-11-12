@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://hmjnqyeohd77"]
+
+[ext_resource type="Script" uid="uid://bi73xmlbtoypa" path="res://game/tests/local_session.gd" id="1_622ba"]
+
+[node name="LocalSessionHost" type="Node" unique_id=411114938]
+script = ExtResource("1_622ba")

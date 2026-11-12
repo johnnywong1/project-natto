@@ -1,0 +1,41 @@
+{
+  "_comment": "Copy this to <id>.json to add a stage. Files starting with _ are ignored. See docs/STAGES.md.",
+  "id": "my_meadow",
+  "name": "My Meadow",
+  "order": 3,
+  "size": [2000, 1400],
+  "ground": "#c5e8a5",
+  "accent": "#a9d98a",
+  "outdoor": true,
+  "light": 1.0,
+  "tint": "#ffffff",
+  "climate": {"clear": 5, "rain": 2},
+  "spawn": [200, 700],
+  "exits": [
+    {"rect": [0, 520, 60, 360], "to": "middlemost", "arrive": [2460, 830], "label": "To Middlemost"}
+  ],
+  "fires": [[400, 700]],
+  "fire_kind": "campfire",
+  "lamps": [],
+  "walls": [],
+  "plateaus": [],
+  "lifts": [],
+  "ice": [],
+  "chests": [],
+  "spawns": {"wilt": 2},
+  "night_spawns": {},
+  "pickup": "",
+  "pickups": 0,
+  "seed": 41,
+  "paths": [
+    {"points": [[0, 700], [1000, 650], [2000, 720]], "width": 80, "color": "#f3dfb6"}
+  ],
+  "landmarks": [],
+  "decor": [],
+  "keep_clear": [],
+  "scatter": [
+    {"kind": "tree", "count": 30, "margin": 80, "scale": [0.9, 1.3]},
+    {"kind": "flower", "count": 60, "margin": 30, "variants": 4}
+  ],
+  "lights": []
+}

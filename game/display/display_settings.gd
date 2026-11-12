@@ -61,9 +61,13 @@ func size_name(s: Vector2i) -> String:
 	return "%d x %d" % [s.x, s.y]
 
 
-## Puts the window in the chosen mode. Does nothing headless (tests) or on the web.
+## Puts the window in the chosen mode. Does nothing headless (tests). In a browser only
+## fullscreen vs. in-page works (the page itself sets the size), so sizes and vsync are skipped.
 func apply() -> void:
 	if DisplayServer.get_name() == "headless":
+		return
+	if OS.has_feature("web"):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if mode == "windowed" else DisplayServer.WINDOW_MODE_FULLSCREEN)
 		return
 	match mode:
 		"fullscreen":

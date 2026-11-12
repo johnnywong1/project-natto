@@ -19,6 +19,7 @@ that touches `game/`.
 | ui | The in-game screens, driven by real key presses: Esc opens the pause menu from the game, the bag, the map and the controls screen; Resume; Settings; Exit to the title | `godot --headless --path . -- --solo --ui-test` |
 | menu | The title screen: every page, name and colour, the world slots (new, continue, delete), hosting a room and leaving it, Esc going back | `godot --headless --path . -- --menu-test` |
 | lobby | Sign-in and sessions as two real processes: join, Ready, start, leave, rejoin mid-game, the host's exit ending the game for everyone | `python tools/mp_test.py --godot G --lobby-test` |
+| lobby-ws | The same lobby story over WebSocket instead of ENet | `python tools/mp_test.py --godot G --lobby-test --transport ws` |
 | save | A solo world is played by a bot, saved, started again and compared: bag, wheel, gear, crops, pins, lessons, clock, position | `python tools/mp_test.py --godot G --save-test` |
 | session | A 5-player session: bots farm, fight, climb and delve; one leaves, one joins late, a 6th is turned away; snapshot rates and state agreement | `python tools/mp_test.py --godot G` |
 | scenarios | 42 mechanic scenarios over the network: block tiers, shield break and recovery, spikes, coverage arcs, bumps, fire and ice, lifts, chests, doors, lessons | `python tools/mp_test.py --godot G --scenarios[=name,name]` |

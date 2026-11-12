@@ -57,11 +57,15 @@ func _ready() -> void:
 	for sz: Vector2i in Display.SIZES:
 		_size.add_item(Display.size_name(sz))
 	_size.item_selected.connect(func(i: int) -> void: Display.set_size(Display.SIZES[i]))
-	v.add_child(_row("Window size", _size))
+	var size_row := _row("Window size", _size)
+	size_row.visible = not OS.has_feature("web")   # the browser page sets the size
+	v.add_child(size_row)
 	_vsync = CheckButton.new()
 	_vsync.text = "On"
 	_vsync.toggled.connect(func(on: bool) -> void: Display.set_vsync(on))
-	v.add_child(_row("Vsync", _vsync))
+	var vsync_row := _row("Vsync", _vsync)
+	vsync_row.visible = not OS.has_feature("web")
+	v.add_child(vsync_row)
 	v.add_child(UiTheme.note("F11 toggles fullscreen. You can also drag the window to any size."))
 	Display.changed.connect(_refresh_display)
 	_refresh_display()

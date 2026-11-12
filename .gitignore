@@ -4,3 +4,6 @@
 
 # Python test tools
 __pycache__/
+
+# Web export output
+build/

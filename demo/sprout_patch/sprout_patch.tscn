@@ -1,0 +1,91 @@
+[gd_scene format=3 uid="uid://u8g5j8xl33m5"]
+
+[ext_resource type="Script" uid="uid://dcv0cjv4a76fg" path="res://demo/sprout_patch/sprout_patch.gd" id="1_3xtg5"]
+[ext_resource type="Script" uid="uid://gtpvg3muc2r1" path="res://demo/sprout_patch/ground.gd" id="2_emocw"]
+[ext_resource type="Script" uid="uid://c1gtbkj3pq4k0" path="res://demo/sprout_patch/soil_grid.gd" id="3_pobj7"]
+[ext_resource type="Script" uid="uid://pt8opin0csf6" path="res://demo/sprout_patch/player.gd" id="4_yonx5"]
+[ext_resource type="Script" uid="uid://h0ik0hb6ycej" path="res://demo/sprout_patch/pepper.gd" id="5_oy800"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0js1e"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(1, 0.9647059, 0.8980392, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(0.35686275, 0.22745098, 0.16078432, 1)
+corner_radius_top_left = 18
+corner_radius_top_right = 18
+corner_radius_bottom_right = 18
+corner_radius_bottom_left = 18
+
+[node name="SproutPatch" type="Node2D" unique_id=249044598]
+script = ExtResource("1_3xtg5")
+
+[node name="Ground" type="Node2D" parent="." unique_id=886676611]
+script = ExtResource("2_emocw")
+
+[node name="SoilGrid" type="Node2D" parent="." unique_id=364498717]
+position = Vector2(600, 320)
+script = ExtResource("3_pobj7")
+
+[node name="World" type="Node2D" parent="." unique_id=919579650]
+y_sort_enabled = true
+
+[node name="Player" type="Node2D" parent="World" unique_id=426537096]
+position = Vector2(600, 500)
+script = ExtResource("4_yonx5")
+
+[node name="Pepper" type="Node2D" parent="World" unique_id=1590176470]
+position = Vector2(950, 250)
+script = ExtResource("5_oy800")
+
+[node name="HUD" type="CanvasLayer" parent="." unique_id=801785820]
+
+[node name="Stats" type="Label" parent="HUD" unique_id=394409706]
+offset_left = 20.0
+offset_top = 10.0
+offset_right = 20.0
+offset_bottom = 10.0
+theme_override_colors/font_color = Color(0.35686275, 0.22745098, 0.16078432, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 22
+text = "Water 5/5     Popberries 0     Wilts popped 0"
+
+[node name="Quest" type="Label" parent="HUD" unique_id=579917617]
+offset_left = 20.0
+offset_top = 42.0
+offset_right = 20.0
+offset_bottom = 42.0
+theme_override_colors/font_color = Color(0.35686275, 0.22745098, 0.16078432, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 7
+theme_override_font_sizes/font_size = 18
+text = "Quest: talk to Pepper"
+
+[node name="Toast" type="Label" parent="HUD" unique_id=963930096]
+offset_left = 226.0
+offset_top = 458.0
+offset_right = 926.0
+offset_bottom = 502.0
+theme_override_colors/font_color = Color(0.35686275, 0.22745098, 0.16078432, 1)
+theme_override_font_sizes/font_size = 20
+theme_override_styles/normal = SubResource("StyleBoxFlat_0js1e")
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="Hint" type="Label" parent="HUD" unique_id=73584621]
+offset_top = 616.0
+offset_right = 1152.0
+offset_bottom = 644.0
+theme_override_colors/font_color = Color(0.35686275, 0.22745098, 0.16078432, 1)
+theme_override_colors/font_outline_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 6
+theme_override_font_sizes/font_size = 16
+text = "Move WASD/Arrows   E use (plant, water, harvest, refill, talk)   J sickle   K throw popberry   Space hop"
+horizontal_alignment = 1

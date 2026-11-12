@@ -1,0 +1,42 @@
+{
+  "house_pepper": {
+    "name": "Pepper's Cottage",
+    "door": [
+      300,
+      354
+    ],
+    "lock": "",
+    "wall": "#f3d9b0",
+    "chest": ""
+  },
+  "house_willow": {
+    "name": "Willow's House",
+    "door": [
+      620,
+      354
+    ],
+    "lock": "",
+    "wall": "#d9ecc8",
+    "chest": "willow_chest"
+  },
+  "house_clock": {
+    "name": "The Clockmaker's",
+    "door": [
+      1900,
+      354
+    ],
+    "lock": "brass_key",
+    "wall": "#d6d0ef",
+    "chest": "clock_chest"
+  },
+  "house_store": {
+    "name": "Old Storehouse",
+    "door": [
+      2220,
+      354
+    ],
+    "lock": "rusty_key",
+    "wall": "#e3d3c3",
+    "chest": "store_chest"
+  }
+}

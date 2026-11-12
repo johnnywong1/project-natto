@@ -170,12 +170,15 @@ func _build_home() -> Control:
 	v.add_child(name_row)
 	_paint_colors()
 	v.add_child(HSeparator.new())
-	for entry: Array in [["Play solo", func() -> void: _open_worlds("solo")],
-			["Host a game", func() -> void: _open_worlds("host")],
-			["Join a game", func() -> void: _show("join")],
-			["Settings", func() -> void: _show("settings")],
-			["Controls", func() -> void: _show("controls")],
-			["Quit", func() -> void: get_tree().quit()]]:
+	var entries: Array = [["Play solo", func() -> void: _open_worlds("solo")]]
+	if not Net.is_web():   # a browser tab can't run a game server
+		entries.append(["Host a game", func() -> void: _open_worlds("host")])
+	entries.append(["Join a game", func() -> void: _show("join")])
+	entries.append(["Settings", func() -> void: _show("settings")])
+	entries.append(["Controls", func() -> void: _show("controls")])
+	if not Net.is_web():
+		entries.append(["Quit", func() -> void: get_tree().quit()])
+	for entry: Array in entries:
 		var b := UiTheme.button(entry[0], entry[1], 300)
 		b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		v.add_child(b)
@@ -204,6 +207,7 @@ func _build_worlds() -> Control:
 	_port.text = str(Net.DEFAULT_PORT)
 	_port.custom_minimum_size = Vector2(100, 0)
 	_port_row.add_child(_port)
+	_port_row.add_child(_ws_box())
 	v.add_child(_port_row)
 	v.add_child(UiTheme.button("Back", func() -> void: _show("home"), 140))
 	return pv[0]
@@ -272,7 +276,7 @@ func _build_join() -> Control:
 	var row := HBoxContainer.new()
 	_address = LineEdit.new()
 	_address.text = "127.0.0.1"
-	_address.placeholder_text = "Host's address"
+	_address.placeholder_text = "Host's address or ws:// URL"
 	_address.custom_minimum_size = Vector2(230, 0)
 	row.add_child(_address)
 	var port := LineEdit.new()
@@ -281,11 +285,25 @@ func _build_join() -> Control:
 	row.add_child(port)
 	row.add_child(UiTheme.button("Join", _join.bind(port), 110))
 	v.add_child(row)
+	v.add_child(UiTheme.note("Tip: an address starting with ws:// or wss:// joins over WebSocket."))
+	if not Net.is_web():
+		v.add_child(_ws_box())
 	v.add_child(UiTheme.heading("Games on your network", 18))
 	_lan_list = VBoxContainer.new()
 	v.add_child(_lan_list)
 	v.add_child(UiTheme.button("Back", func() -> void: _show("home"), 140))
 	return pv[0]
+
+
+## The "use WebSocket" tick shared by the host and join pages (ENet stays the default).
+func _ws_box() -> CheckBox:
+	var c := CheckBox.new()
+	c.text = "WebSocket"
+	c.tooltip_text = "Use WebSocket instead of UDP: needed for browsers and some tunnels."
+	c.focus_mode = Control.FOCUS_NONE
+	c.button_pressed = Net.transport == "ws"
+	c.toggled.connect(func(on: bool) -> void: Net.transport = "ws" if on else "enet")
+	return c
 
 
 func _join(port_edit: LineEdit) -> void:

@@ -10,6 +10,7 @@ Suites (all headless, no window needed):
   ui         the in-game screens: Esc, the bag, the map, controls, settings, exit
   menu       the title screen: pages, name and colour, world slots, hosting, Esc goes back
   lobby      sign-in and sessions: join, Ready, start, leave, rejoin, the host's exit
+  lobby-ws   the same lobby story over WebSocket instead of ENet
   save       a solo world is played, saved, loaded again and compared
   session    a 5-player session with bots, a leaver, a late joiner and a 6th player turned away
   scenarios  40 mechanic scenarios over the network (blocks, shields, fire, ice, lifts, doors...)
@@ -26,7 +27,7 @@ import sys
 import time
 from pathlib import Path
 
-QUICK = ["unit", "ui", "menu", "lobby", "save", "session", "scenarios"]
+QUICK = ["unit", "ui", "menu", "lobby", "lobby-ws", "save", "session", "scenarios"]
 LAG = [("home", ["--lag", "40", "--jitter", "8", "--loss", "0.02", "--label", "home internet: ~80 ms ping, 2% loss"]),
        ("rough", ["--lag", "75", "--jitter", "20", "--loss", "0.05", "--label", "rough Wi-Fi: ~150 ms ping, 5% loss"])]
 
@@ -67,6 +68,8 @@ def run_suite(suite: str, args, out: Path):
         yield "ui", *godot_checks([godot, "--headless", "--path", proj, "--", "--solo", "--ui-test"], out / "ui.txt")
     elif suite == "menu":
         yield "menu", *godot_checks([godot, "--headless", "--path", proj, "--", "--menu-test"], out / "menu.txt")
+    elif suite == "lobby-ws":
+        yield "lobby-ws", *mp_checks(mp + ["--lobby-test", "--transport", "ws", "--out", str(out / "lobby-ws")], out / "lobby-ws.txt")
     elif suite == "lobby":
         yield "lobby", *mp_checks(mp + ["--lobby-test", "--out", str(out / "lobby")], out / "lobby.txt")
     elif suite == "save":

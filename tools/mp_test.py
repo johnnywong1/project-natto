@@ -49,6 +49,8 @@ def main() -> int:
                     help="run the mechanic scenarios (all, or a comma-separated list) instead of the session")
     ap.add_argument("--save-test", action="store_true",
                     help="play a solo world, save, start it again and check everything came back")
+    ap.add_argument("--transport", choices=["enet", "ws"], default="enet",
+                    help="network transport for --lobby-test (ws = WebSocket; not usable with --lag)")
     ap.add_argument("--lobby-test", action="store_true",
                     help="two processes: join, ready, start, leave, rejoin, and the host's exit ending the game")
     args = ap.parse_args()
@@ -452,8 +454,8 @@ def run_lobby_test(args) -> int:
     base = [args.godot, "--headless", "--path", args.project, "--"]
     procs = {}
     logs = {}
-    for name, extra, delay in [("LobbyHost", ["--host", f"--port={port}", "--lobby-test=host", "--name=Host"], 0.0),
-                               ("LobbyJoin", [f"--join=127.0.0.1", f"--port={port}", "--lobby-test=join", "--name=Joiner"], 1.5)]:
+    for name, extra, delay in [("LobbyHost", ["--host", f"--port={port}", f"--transport={args.transport}", "--lobby-test=host", "--name=Host"], 0.0),
+                               ("LobbyJoin", [f"--join=127.0.0.1", f"--port={port}", f"--transport={args.transport}", "--lobby-test=join", "--name=Joiner"], 1.5)]:
         time.sleep(delay)
         logs[name] = open(out / f"{name}.log", "w")
         procs[name] = subprocess.Popen(base + extra, stdout=logs[name], stderr=subprocess.STDOUT)

@@ -52,6 +52,10 @@ var solo := false
 ## The save slot the next hosted or solo world uses (0 = don't save).
 var save_slot := 0
 
+## "enet" (default, UDP, desktop only) or "ws" (WebSocket: works in browsers and through most
+## proxies/tunnels). Set with --transport=ws, or by joining an address that starts with ws:// / wss://.
+var transport := "enet"
+
 var _beacon: PacketPeerUDP
 var _listener: PacketPeerUDP
 var _beacon_t := 0.0
@@ -73,6 +77,8 @@ func _ready() -> void:
 		local_color = int(opts["color"]) % COLORS.size()
 	if opts.has("port"):
 		_port = int(opts["port"])
+	if opts.has("transport"):
+		transport = "ws" if str(opts["transport"]) == "ws" else "enet"
 	if opts.has("report"):
 		var probe: Node = load("res://game/tests/test_report.gd").new()
 		probe.name = "Probe"
@@ -136,11 +142,24 @@ func player_color(id: int) -> Color:
 
 # ---------------------------------------------------------------- host / join / leave
 
+## True when this build runs in a browser (no UDP, no listen server).
+static func is_web() -> bool:
+	return OS.has_feature("web")
+
+
 func host(port: int = DEFAULT_PORT) -> Error:
 	leave(false)
-	var peer := ENetMultiplayerPeer.new()
-	# One extra slot so a sixth person can connect long enough to be told the game is full.
-	var err := peer.create_server(port, MAX_PLAYERS)
+	var peer: MultiplayerPeer
+	var err: Error
+	if transport == "ws":
+		var ws := WebSocketMultiplayerPeer.new()
+		err = ws.create_server(port)
+		peer = ws
+	else:
+		var enet := ENetMultiplayerPeer.new()
+		# One extra slot so a sixth person can connect long enough to be told the game is full.
+		err = enet.create_server(port, MAX_PLAYERS)
+		peer = enet
 	if err != OK:
 		_set_status("Couldn't host on port %d (error %d). Is another game using it?" % [port, err])
 		return err
@@ -161,8 +180,18 @@ func join(address: String, port: int = DEFAULT_PORT) -> Error:
 	leave(false)
 	rejected_reason = ""
 	end_reason = ""
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
+	var peer: MultiplayerPeer
+	var err: Error
+	if address.begins_with("ws://") or address.begins_with("wss://"):
+		transport = "ws"   # a full URL (wss:// for a hosted server) picks WebSocket by itself
+	if transport == "ws":
+		var ws := WebSocketMultiplayerPeer.new()
+		err = ws.create_client(ws_url(address, port))
+		peer = ws
+	else:
+		var enet := ENetMultiplayerPeer.new()
+		err = enet.create_client(address, port)
+		peer = enet
 	if err != OK:
 		_set_status("Couldn't start connecting (error %d)." % err)
 		return err
@@ -198,6 +227,8 @@ func leave(back_to_menu: bool = true) -> void:
 			var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
 			if enet != null and enet.host != null:
 				enet.host.flush()
+			elif multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
+				multiplayer.multiplayer_peer.poll()
 	_stop_beacon()
 	var p := multiplayer.multiplayer_peer
 	if p != null and not (p is OfflineMultiplayerPeer):
@@ -355,14 +386,21 @@ func _rpc_begin(state: Dictionary) -> void:
 
 # ---------------------------------------------------------------- helpers
 
+## The ws:// URL for an address: full URLs pass through, bare hosts get ws:// and the port.
+static func ws_url(address: String, port: int) -> String:
+	if address.begins_with("ws://") or address.begins_with("wss://"):
+		return address
+	return "ws://%s:%d" % [address, port]
+
+
 func _reject(id: int, reason: String) -> void:
 	log_line("turning away peer %d: %s" % [id, reason])
 	_rpc_rejected.rpc_id(id, reason)
 	# Give the message time to arrive even on a lossy connection; the player leaves by
 	# themselves when it does. This is only a fallback.
 	await get_tree().create_timer(3.0).timeout
-	var p := multiplayer.multiplayer_peer as ENetMultiplayerPeer
-	if p != null and id in multiplayer.get_peers():
+	var p := multiplayer.multiplayer_peer
+	if p != null and not (p is OfflineMultiplayerPeer) and id in multiplayer.get_peers():
 		p.disconnect_peer(id)
 
 
@@ -411,6 +449,8 @@ func _set_status(text: String) -> void:
 # ---------------------------------------------------------------- LAN discovery
 
 func _start_beacon() -> void:
+	if is_web():
+		return   # browsers have no UDP
 	_beacon = PacketPeerUDP.new()
 	_beacon.set_broadcast_enabled(true)
 	_beacon.set_dest_address("255.255.255.255", DISCOVERY_PORT)
@@ -425,7 +465,7 @@ func _stop_beacon() -> void:
 
 ## The lobby calls this so the player sees games hosted on the same network.
 func start_listening() -> void:
-	if _listener != null:
+	if _listener != null or is_web():
 		return
 	_listener = PacketPeerUDP.new()
 	if _listener.bind(DISCOVERY_PORT) != OK:

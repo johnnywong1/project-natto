@@ -8,6 +8,7 @@ or join one.
 - How to play: `docs/GAMEPLAY.md`
 - Multiplayer: `docs/MULTIPLAYER.md`
 - Making stages: `docs/STAGES.md`
+- Play in a browser / WebSocket mode: `docs/WEB.md`
 - Tests: `docs/TESTING.md` (`python tools/run_tests.py --godot /path/to/godot`)
 - Latest test results: `docs/MULTIPLAYER_TEST_RESULTS.md`
 

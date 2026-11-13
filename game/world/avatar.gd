@@ -309,7 +309,7 @@ func _local_move(delta: float) -> void:
 		facing = dir.normalized()
 	position += (v + _knock) * delta
 	_knock = _knock.move_toward(Vector2.ZERO, 1100.0 * delta)
-	position = Z.resolve(zone, position, RADIUS, World.frozen_ice(zone), World.tree_solids(zone))
+	position = Z.resolve(zone, position, RADIUS, World.frozen_ice(zone), World.solids_for(zone))
 
 
 ## True if a blow coming from `from` lands on the lid: blocking and facing it.

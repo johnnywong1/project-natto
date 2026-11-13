@@ -40,7 +40,7 @@ func _run() -> void:
 		"block_tiers_on_a_bear", "shield_breaks_then_recovers", "spike_shield_hurts_attacker",
 		"tower_shield_covers_the_side", "blocking_speed_depends_on_shield",
 		"open_house_door", "locked_house_needs_key",
-		"chop_tree_gives_lumber", "bush_slows_you_down",
+		"chop_tree_gives_lumber", "bush_slows_you_down", "cant_walk_through_a_mob",
 	]
 	var only := str(Net.opts.get("scenario", "all"))
 	if only != "all" and only != "true":
@@ -923,6 +923,27 @@ func _s_chop_tree_gives_lumber() -> Array:
 	var blocks_again: bool = World.tree_solids(zid).any(func(s: Array) -> bool: return (s[0] as Vector2).distance_to(tpos) < 1.0)
 	var ok := felled and gained >= 1 and not stump_blocks and regrew and blocks_again
 	return [ok, "felled=%s, +%d lumber, stump blocks=%s (want false), regrew=%s, blocks again=%s" % [felled, gained, stump_blocks, regrew, blocks_again]]
+
+
+func _s_cant_walk_through_a_mob() -> Array:
+	await _goto("middlemost", Vector2(1950, 1180))
+	var me := _me()
+	var en: Variant = await _spawn("wilt", me.position + Vector2(120, 0))
+	if en == null:
+		return [false, "no wilt spawned"]
+	await _wait(0.2)
+	var body := E.body_radius("wilt")
+	# Walk straight at the wilt for a while; the body should stop us short of its centre.
+	me.bot_input = Vector2(1, 0)
+	var min_gap := 9999.0
+	for k in 25:
+		await _wait(0.06)
+		if not is_instance_valid(en):
+			break
+		min_gap = minf(min_gap, me.position.distance_to(en.position))
+	me.bot_input = Vector2.ZERO
+	var kept_out := is_instance_valid(en) and min_gap >= body - 2.0
+	return [kept_out, "closest we got to the wilt centre: %.0f px (body %.0f); blocked=%s" % [min_gap, body, kept_out]]
 
 
 func _s_bush_slows_you_down() -> Array:

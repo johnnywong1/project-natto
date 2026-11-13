@@ -95,6 +95,9 @@ var vitals: Dictionary = {}      # this player's hp, max_hp, fainted, torch_lit,
 var selected := 0                # which wheel segment this player is holding
 var my_zone := "middlemost"
 var arrive_pos := Vector2.ZERO
+## Solid mob bodies in the local player's zone, as [centre, radius] — rebuilt each frame by
+## world_view so the local player can't walk through enemies. Client-side only.
+var dyn_solids: Array = []
 var time_scale := 1.0
 var play_time := 0.0             # seconds this world has been played, over every session (saved)
 var session_time := 0.0          # seconds since this player entered the world
@@ -177,6 +180,7 @@ func reset() -> void:
 	pickups.clear()
 	ice.clear()
 	stumps.clear()
+	dyn_solids.clear()
 	_chop.clear()
 	_solid_cache.clear()
 	lifts.clear()
@@ -747,6 +751,15 @@ func tree_solids(zid: String) -> Array:
 	return out
 
 
+## Everything the local player bumps into in a zone: standing trees plus solid mob bodies.
+## Returns a fresh array so callers can't corrupt the tree cache.
+func solids_for(zid: String) -> Array:
+	var out := tree_solids(zid).duplicate()
+	if zid == my_zone and not dyn_solids.is_empty():
+		out.append_array(dyn_solids)
+	return out
+
+
 ## A tree is standing if it exists and isn't currently a stump.
 func _is_stump(zid: String, idx: int) -> bool:
 	return (stumps.get(zid, {}) as Dictionary).has(idx)
@@ -926,11 +939,33 @@ func _tick_enemies(delta: float) -> void:
 		var frozen := frozen_ice(zid)
 		for en: Dictionary in list:
 			_tick_enemy(zid, en, delta, frozen)
+		_separate_enemies(zid, list)
 		enemies[zid] = list.filter(func(en: Dictionary) -> bool: return float(en["pop"]) > 0.0 or int(en["hp"]) > 0)
 	var now := Time.get_ticks_msec()
 	for atk: int in attacks.keys():
 		if now > int(attacks[atk]["end_ms"]) + 3000:
 			attacks.erase(atk)
+
+
+## Solid mobs don't overlap: nudge any two that do apart (and keep them out of trees/cliffs).
+## A light O(n^2) pass — zones hold only a handful of enemies at once.
+func _separate_enemies(zid: String, list: Array) -> void:
+	for i in list.size():
+		var a: Dictionary = list[i]
+		if int(a["hp"]) <= 0 or not E.is_solid(str(a["kind"])):
+			continue
+		var ra := E.body_radius(str(a["kind"]))
+		for j in range(i + 1, list.size()):
+			var b: Dictionary = list[j]
+			if int(b["hp"]) <= 0 or not E.is_solid(str(b["kind"])):
+				continue
+			var rb := E.body_radius(str(b["kind"]))
+			var d: Vector2 = (b["pos"] as Vector2) - (a["pos"] as Vector2)
+			var overlap := ra + rb - d.length()
+			if overlap > 0.0:
+				var push := (d.normalized() if d.length() > 0.01 else Vector2.RIGHT) * (overlap * 0.5)
+				a["pos"] = Z.resolve(zid, (a["pos"] as Vector2) - push, ra, frozen_ice(zid))
+				b["pos"] = Z.resolve(zid, (b["pos"] as Vector2) + push, rb, frozen_ice(zid))
 
 
 func _spawn_enemy(zid: String, kind: String, at: Vector2) -> Dictionary:

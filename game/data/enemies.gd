@@ -33,3 +33,17 @@ const STATE_CODES := {"move": 0, "windup": 1, "attack": 2, "recover": 3, "stunne
 
 static func info(kind: String) -> Dictionary:
 	return KINDS.get(kind, KINDS["wilt"])
+
+
+## Most mobs are solid: you can't walk through their body, and they don't stack on each
+## other. A kind can opt out with "solid": false (e.g. a future ghost or flying mob).
+static func is_solid(kind: String) -> bool:
+	return bool(info(kind).get("solid", true))
+
+
+## The radius of a mob's body for blocking (a little smaller than its hurtbox, so you can
+## still get close enough to hit it). 0 means it doesn't block.
+static func body_radius(kind: String) -> float:
+	if not is_solid(kind):
+		return 0.0
+	return float(info(kind)["radius"]) * 0.8

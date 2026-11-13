@@ -8,6 +8,7 @@ const HB = preload("res://game/combat/hitboxes.gd")
 const Items = preload("res://game/data/items.gd")
 const Lessons = preload("res://game/data/lessons.gd")
 const Z = preload("res://game/data/zones.gd")
+const E = preload("res://game/data/enemies.gd")
 
 var _failed := 0
 var _passed := 0
@@ -160,6 +161,11 @@ func _trees() -> void:
 	check("a bush never blocks movement", not Z.blocked("middlemost", bushes[0], 14.0, [], []))
 	check("a bush slows you when you're in it", Z.bush_slow("middlemost", bushes[0]) < 1.0)
 	check("open ground doesn't slow you", is_equal_approx(Z.bush_slow("middlemost", bushes[0] + Vector2(600, 600)), 1.0))
+	# Mobs are solid bodies you can't walk through.
+	check("a wilt has a solid body", E.is_solid("wilt") and E.body_radius("wilt") > 0.0)
+	var mob := Vector2(1000, 1000)
+	var pushed_off := Z.resolve("middlemost", mob, 14.0, [], [[mob, E.body_radius("wilt")]])
+	check("you're pushed out of a mob's body", pushed_off.distance_to(mob) >= E.body_radius("wilt") - 1.0, str(pushed_off))
 
 
 func _same_sites(a: Array, b: Array) -> bool:

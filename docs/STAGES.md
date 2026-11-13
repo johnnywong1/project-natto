@@ -63,6 +63,21 @@ Optional:
 | `scatter` | Random decor placed by the seed: `{"kind", "count", "margin", "scale": [min, max]}`. `variants: 4` picks a whole-number look instead of a scale (flowers). `region: [x, y, w, h]` limits a rule to one area (roots along a cave roof). `glow_every: 3` with `glow_color` adds a light to every third one (glowing mushrooms). |
 | `lights` | Fixed lights: `{"pos", "color", "scale", "energy"}`. |
 
+## Trees and bushes
+
+Trees (fixed `decor` or `scatter`) are **solid** — they block movement — and can be **chopped**:
+swing the sickle at one and after a few hits it falls, drops Lumber, and leaves a stump that
+grows back into a tree after a while. **Bushes don't block**, but they slow you to about half
+speed while you push through them.
+
+Both are placed the same way as any decor, but their positions now come from `zones.gd`
+(`Z.all_decor` / `Z.tree_sites` / `Z.bush_sites`) so the collision code and the renderer agree
+on every tree and bush. A tree's stump is tracked by its index among the zone's trees, so if you
+reorder or change a zone's `scatter`/`decor`, existing saves may show a stump on a different
+tree — fine for development, worth knowing. Tuning lives at the top of `world_state.gd`
+(`TREE_CHOPS`, `TREE_REGROW`, `TREE_LUMBER`) and `zones.gd` (`TREE_SOLID_BASE`, `BUSH_RADIUS`,
+`BUSH_SLOW`).
+
 ## houses.json
 
 ```json

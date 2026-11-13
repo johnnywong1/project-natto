@@ -90,6 +90,12 @@ static func capture(world: Node, keep: Dictionary, world_name: String) -> Dictio
 		for iid: int in _sorted_keys(world.ice[zid]):
 			flags.append(bool(world.ice[zid][iid][1]))
 		ice_melted[zid] = flags
+	var stumps_save := {}   # JSON needs string keys; the tree index becomes a string
+	for zid: String in world.stumps:
+		var d := {}
+		for idx: int in (world.stumps[zid] as Dictionary):
+			d[str(idx)] = float(world.stumps[zid][idx])
+		stumps_save[zid] = d
 	var pins: Array = []
 	for pid: int in _sorted_keys(world.pins):
 		var pin: Dictionary = world.pins[pid]
@@ -97,7 +103,7 @@ static func capture(world: Node, keep: Dictionary, world_name: String) -> Dictio
 	return {
 		"version": VERSION, "name": world_name, "saved_at": Time.get_unix_time_from_system(),
 		"world": {"clock": world.clock, "day": world.day, "weather": world.weather, "crops": world.crops,
-			"pins": pins, "ice": ice_melted, "lifts": world.lifts, "unlocked": world.unlocked.keys(),
+			"pins": pins, "ice": ice_melted, "stumps": stumps_save, "lifts": world.lifts, "unlocked": world.unlocked.keys(),
 			"play_time": world.play_time},
 		"players": players,
 	}
@@ -135,6 +141,13 @@ static func restore_world(world: Node, data: Dictionary) -> void:
 			if k < flags.size():
 				world.ice[zid][iid][1] = bool(flags[k])
 			k += 1
+	for zid: String in w.get("stumps", {}):
+		var d := {}
+		for k: String in (w["stumps"][zid] as Dictionary):
+			d[int(k)] = float(w["stumps"][zid][k])
+		if not d.is_empty():
+			world.stumps[zid] = d
+	world._solid_cache.clear()
 	for house: String in w.get("unlocked", []):
 		world.unlocked[house] = true
 	for zid: String in w["lifts"]:

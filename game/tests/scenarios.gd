@@ -40,6 +40,7 @@ func _run() -> void:
 		"block_tiers_on_a_bear", "shield_breaks_then_recovers", "spike_shield_hurts_attacker",
 		"tower_shield_covers_the_side", "blocking_speed_depends_on_shield",
 		"open_house_door", "locked_house_needs_key",
+		"chop_tree_gives_lumber", "bush_slows_you_down",
 	]
 	var only := str(Net.opts.get("scenario", "all"))
 	if only != "all" and only != "true":
@@ -892,3 +893,46 @@ func _s_locked_house_needs_key() -> Array:
 	var got := Items.find(World.inventory, "tower_shield") >= 0 or str(World.equip.get("offhand", "")) == "tower_shield"
 	return [stayed and inside == "house_clock" and unlocked and got,
 		"without the key: stayed outside=%s; with the Brass Key: inside %s, door unlocked for everyone=%s; chest gave a Tower Shield=%s" % [stayed, inside, unlocked, got]]
+
+
+func _s_chop_tree_gives_lumber() -> Array:
+	var zid := "middlemost"
+	var trees := Z.tree_sites(zid)
+	if trees.is_empty():
+		return [false, "no trees in middlemost"]
+	var t: Dictionary = trees[0]
+	var tpos: Vector2 = t["pos"]
+	var stand := tpos + Vector2(0, 40)             # just below the trunk, within sickle reach
+	await _goto(zid, stand)
+	World.select_slot(0)                           # the sickle
+	world.aim_override = (tpos - stand).normalized()
+	await _wait(0.2)
+	var me := _me()
+	var before := World.count_mine("lumber")
+	for k in 5:                                     # TREE_CHOPS swings fells it
+		me.stamina = float(me.max_orbs)
+		world.use_item(tpos)
+		await _wait(0.35)
+	world.aim_override = Vector2.ZERO
+	var idx := int(t["i"])
+	var felled: bool = (World.stumps.get(zid, {}) as Dictionary).has(idx)
+	var gained := World.count_mine("lumber") - before
+	var stump_blocks: bool = World.tree_solids(zid).any(func(s: Array) -> bool: return (s[0] as Vector2).distance_to(tpos) < 1.0)
+	_debug("regrow")
+	var regrew := await _poll(func() -> bool: return not (World.stumps.get(zid, {}) as Dictionary).has(idx), 2.0)
+	var blocks_again: bool = World.tree_solids(zid).any(func(s: Array) -> bool: return (s[0] as Vector2).distance_to(tpos) < 1.0)
+	var ok := felled and gained >= 1 and not stump_blocks and regrew and blocks_again
+	return [ok, "felled=%s, +%d lumber, stump blocks=%s (want false), regrew=%s, blocks again=%s" % [felled, gained, stump_blocks, regrew, blocks_again]]
+
+
+func _s_bush_slows_you_down() -> Array:
+	var zid := "middlemost"
+	var bushes := Z.bush_sites(zid)
+	if bushes.is_empty():
+		return [false, "no bushes in middlemost"]
+	# A bush never blocks, but standing in one cuts your speed.
+	var at_bush := Z.bush_slow(zid, bushes[0])
+	var in_open := Z.bush_slow(zid, bushes[0] + Vector2(700, 700))
+	var blocks: bool = Z.blocked(zid, bushes[0], 14.0, [], [])
+	var ok := at_bush < 1.0 and is_equal_approx(in_open, 1.0) and not blocks
+	return [ok, "in a bush speed x%.2f, open ground x%.2f, bush blocks movement=%s (want false)" % [at_bush, in_open, blocks]]

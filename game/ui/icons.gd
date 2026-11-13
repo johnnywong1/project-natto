@@ -115,6 +115,10 @@ static func draw(ci: CanvasItem, id: String, c: Vector2, s: float) -> void:
 		"glow_pebble":
 			P.blob(ci, c, Vector2(9, 7) * s, col, 3.0 * s)
 			ci.draw_circle(c + Vector2(-3, -2) * s, 2.0 * s, Color.WHITE)
+		"lumber":
+			for off: Vector2 in [Vector2(-5, 3), Vector2(5, 3), Vector2(0, -4)]:
+				P.shape(ci, P.rounded_rect_points(Rect2(c + (off - Vector2(7, 3)) * s, Vector2(14, 6) * s), 3.0), col, 2.5 * s)
+				ci.draw_circle(c + (off + Vector2(-6, 0)) * s, 1.8 * s, col.lightened(0.3))
 		_:
 			P.blob(ci, c, Vector2(8, 8) * s, col, 3.0 * s)
 

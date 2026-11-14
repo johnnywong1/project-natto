@@ -20,6 +20,11 @@ var _sounds: Dictionary = {}       # name -> AudioStreamWAV
 var _players: Array[AudioStreamPlayer] = []
 var _music: AudioStreamPlayer
 var _next := 0
+## Browsers keep all audio muted until the first real user gesture (a click, key or tap).
+## On the web we start out "locked" and only truly begin music once that first input lands;
+## on desktop there's nothing to unlock. See _process().
+var _unlocked := not OS.has_feature("web")
+var _want_music := false
 
 
 func _ready() -> void:
@@ -57,8 +62,23 @@ func play(sound: String, gain: float = 1.0) -> void:
 	p.play()
 
 
+## Waits for the browser's first user gesture, then kicks the muted audio into life. On
+## desktop _unlocked is already true, so this never runs.
+func _process(_delta: float) -> void:
+	if _unlocked:
+		set_process(false)
+		return
+	if Input.is_anything_pressed():   # a click, key or tap — the gesture browsers wait for
+		_unlocked = true
+		set_process(false)
+		if _want_music and _music != null:
+			_music.stop()   # restart cleanly now that the browser's audio clock is running
+			_music.play()
+
+
 func start_music() -> void:
-	if _music != null and not _music.playing:
+	_want_music = true
+	if _unlocked and _music != null and not _music.playing:
 		_music.play()
 
 

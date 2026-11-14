@@ -198,8 +198,26 @@ func _process(delta: float) -> void:
 				_travel_cooldown = 1.5
 				World.to_host(&"c_travel", [str(ex["to"]), local.position])
 				break
+	_update_mob_solids()
 	_check_attacks()
 	_check_contact()
+
+
+## Solid mob bodies in this zone, so the local player can't walk through enemies. Rebuilt
+## each frame from what's on screen; the host doesn't need it (player movement is local).
+func _update_mob_solids() -> void:
+	var out: Array = []
+	for eid: int in enemy_nodes:
+		var obj: Variant = enemy_nodes[eid]
+		if not is_instance_valid(obj):
+			continue
+		var en: EnemyView = obj
+		if en.popping or en.hp_frac <= 0.0:
+			continue
+		var br := E.body_radius(en.kind)
+		if br > 0.0:
+			out.append([en.position, br])
+	World.dyn_solids = out
 
 
 func _update_aim() -> void:
@@ -412,7 +430,9 @@ func _got_hit(enemy_id: int, atk_id: int, source: Vector2) -> void:
 			stats["perfect"] = int(stats["perfect"]) + 1
 		elif tier == 2:
 			stats["great"] = int(stats.get("great", 0)) + 1
-		local.take_hit(source, [0.0, 220.0, 140.0, 60.0][tier])
+		# A real blow still shoves you a little; a bump on the shield doesn't move you at
+		# all, so a slime can't walk you out of position (it is the one shoved back).
+		local.take_hit(source, 0.0 if atk_id == 0 else [0.0, 220.0, 140.0, 60.0][tier])
 		hud.show_toast(Items.BLOCK_NAMES[tier])
 	else:
 		stats["hits"] = int(stats["hits"]) + 1

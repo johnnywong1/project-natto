@@ -29,6 +29,7 @@ func _ready() -> void:
 	World.crop_changed.connect(_on_crop_changed)
 	World.pickups_changed.connect(_on_pickups_changed)
 	World.ice_changed.connect(_on_pickups_changed)
+	World.stumps_changed.connect(_on_pickups_changed)
 	World.vitals_changed.connect(queue_redraw)
 	_light_tex = GradientTexture2D.new()
 	_light_tex.width = 256
@@ -104,89 +105,28 @@ func _add_light(pos: Vector2, color: Color, scale_: float, energy: float) -> Poi
 	return l
 
 
-## A random spot that keeps clear of the given rectangles.
-func _spot(rng: RandomNumberGenerator, avoid: Array[Rect2], margin: float = 60.0) -> Vector2:
-	var p := Vector2.ZERO
-	for attempt in 30:
-		p = Vector2(rng.randf_range(margin, size.x - margin), rng.randf_range(margin, size.y - margin))
-		var ok := true
-		for r in avoid:
-			if r.has_point(p):
-				ok = false
-				break
-		if ok:
-			return p
-	return p
-
-
-func _exit_rects() -> Array[Rect2]:
-	var out: Array[Rect2] = []
-	var zd := Z.zone(zone)
-	for ex: Dictionary in zd["exits"]:
-		out.append((ex["rect"] as Rect2).grow(160.0))
-	for w: Rect2 in zd["walls"]:
-		out.append(w.grow(50.0))
-	for l: Dictionary in zd["lifts"]:
-		out.append(Z.lift_rect(l["bottom"]).grow(70.0))
-		out.append(Z.lift_rect(l["top"]).grow(70.0))
-		out.append(Rect2(l["top"], Vector2.ZERO).expand(l["bottom"]).grow(110.0))
-	for f: Vector2 in zd["fires"]:
-		out.append(Rect2(f - Vector2(70, 70), Vector2(140, 120)))
-	for c: Dictionary in zd["chests"]:
-		out.append(Rect2((c["pos"] as Vector2) - Vector2(80, 80), Vector2(160, 140)))
-	for i: Vector2 in zd["ice"]:
-		out.append(Rect2(i - Vector2(60, 60), Vector2(120, 120)))
-	return out
-
-
-func _path_rects(pts: PackedVector2Array, width: float) -> Array[Rect2]:
-	var out: Array[Rect2] = []
-	for i in pts.size() - 1:
-		out.append(Rect2(pts[i], Vector2.ZERO).expand(pts[i + 1]).grow(width * 0.5 + 30.0))
-	return out
-
-
 ## Lays the zone out from its stage file (docs/STAGES.md): the paths, the fixed decor, and
 ## the scattered decor (trees, ferns, rocks...), which is placed by the zone's seed so every
 ## player sees the same map. Scatter avoids exits, paths, the farm, the well and the stage's
 ## "keep_clear" rectangles.
 func _layout(zd: Dictionary) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(zd["seed"])
 	for pth: Dictionary in zd.get("paths", []):
 		var pts := PackedVector2Array()
 		for pt: Vector2 in pth["points"]:
 			pts.append(pt)
 		paths.append([pts, float(pth.get("width", 80.0)), pth.get("color", P.PATH)])
-	var avoid: Array[Rect2] = _exit_rects()
-	for pth: Array in paths:
-		avoid.append_array(_path_rects(pth[0], pth[1]))
-	if zd.has("farm"):
-		avoid.append(Z.farm_rect(zone).grow(70.0))
-	if zd.has("well"):
-		avoid.append(Rect2((zd["well"] as Vector2) - Vector2(90, 120), Vector2(180, 170)))
-	for r: Rect2 in zd.get("keep_clear", []):
-		avoid.append(r)
-	for d: Dictionary in zd.get("decor", []):
-		decor.append([str(d["kind"]), d["pos"], float(d.get("scale", 1.0))])
-	for rule: Dictionary in zd.get("scatter", []):
-		var kind := str(rule["kind"])
-		var margin := float(rule.get("margin", 60.0))
-		var scale_range: Vector2 = rule.get("scale", Vector2(1, 1))
-		var variants := int(rule.get("variants", 0))
-		var region: Variant = rule.get("region", null)
-		var glow_every := int(rule.get("glow_every", 0))
-		for i in int(rule["count"]):
-			var pos: Vector2
-			if region is Rect2:
-				var rr: Rect2 = region
-				pos = Vector2(rng.randf_range(rr.position.x, rr.end.x), rng.randf_range(rr.position.y, rr.end.y))
-			else:
-				pos = _spot(rng, avoid, margin)
-			var sc: float = float(rng.randi_range(0, variants - 1)) if variants > 0 else rng.randf_range(scale_range.x, scale_range.y)
-			decor.append([kind, pos, sc])
-			if glow_every > 0 and i % glow_every == 0:
-				_glows.append(_add_light(pos + Vector2(0, -12), rule.get("glow_color", Color.WHITE), 1.2, 0.8))
+	# The fixed and scattered decor both come from zones.gd now, so the collision code and
+	# the renderer place every tree and bush in exactly the same spot. Trees carry their
+	# stump index (a 4th element) so _draw_decor can tell a standing tree from a stump.
+	var tree_i := 0
+	for e: Array in Z.all_decor(zone):
+		if e[0] == "tree":
+			decor.append(["tree", e[1], e[2], tree_i])
+			tree_i += 1
+		else:
+			decor.append([e[0], e[1], e[2]])
+		if bool(e[3]):
+			_glows.append(_add_light((e[1] as Vector2) + Vector2(0, -12), e[4], 1.2, 0.8))
 	for lt: Dictionary in zd.get("lights", []):
 		_glows.append(_add_light(lt["pos"], lt.get("color", Color.WHITE), float(lt.get("scale", 1.0)), float(lt.get("energy", 1.0))))
 
@@ -417,6 +357,17 @@ func _draw_decor(d: Array) -> void:
 	var s: float = d[2]
 	match kind:
 		"tree":
+			# A felled tree is a stump until it grows back; a sapling pokes up as it does.
+			var regrow: float = float((World.stumps.get(zone, {}) as Dictionary).get(int(d[3]), -1.0)) if d.size() > 3 else -1.0
+			if regrow >= 0.0:
+				P.shadow(self, p, Vector2(26, 9) * s)
+				P.shape(self, P.rounded_rect_points(Rect2(p + Vector2(-13, -16) * s, Vector2(26, 18) * s), 6.0), P.WOOD, 3.0)
+				draw_circle(p + Vector2(0, -8) * s, 6.0 * s, P.WOOD.lightened(0.25))   # cut rings
+				var grown := clampf(1.0 - regrow / 150.0, 0.0, 1.0)
+				if grown > 0.35:
+					var leaf2 := Color("7fcf7a") if zone != "fernery" else Color("6cc070")
+					P.blob(self, p + Vector2(0, -26) * s * grown, Vector2(20, 18) * s * grown, leaf2)
+				return
 			P.shadow(self, p, Vector2(40, 12) * s)
 			P.shape(self, P.rounded_rect_points(Rect2(p + Vector2(-10, -60) * s, Vector2(20, 62) * s), 6.0), P.WOOD, 3.0)
 			var leaf := Color("7fcf7a") if zone != "fernery" else Color("6cc070")

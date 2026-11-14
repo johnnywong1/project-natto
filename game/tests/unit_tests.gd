@@ -8,6 +8,7 @@ const HB = preload("res://game/combat/hitboxes.gd")
 const Items = preload("res://game/data/items.gd")
 const Lessons = preload("res://game/data/lessons.gd")
 const Z = preload("res://game/data/zones.gd")
+const E = preload("res://game/data/enemies.gd")
 
 var _failed := 0
 var _passed := 0
@@ -19,6 +20,7 @@ func _init() -> void:
 	_shields()
 	_lessons()
 	_zones()
+	_trees()
 	_stages()
 	print("\n%d/%d unit checks passed" % [_passed, _passed + _failed])
 	quit(1 if _failed > 0 else 0)
@@ -137,3 +139,39 @@ func _zones() -> void:
 	for k in 60:
 		p = Z.resolve("fernery", p + Vector2(-12, 0), 14.0, [])
 	check("walking along the top edge stops at the ledge's cliff", p.x >= 2200.0, str(p))
+
+
+func _trees() -> void:
+	var trees := Z.tree_sites("middlemost")
+	check("Middlemost has trees to chop", trees.size() > 0, str(trees.size()))
+	check("tree positions are stable across calls", _same_sites(trees, Z.tree_sites("middlemost")))
+	check("every tree carries a stable index", trees.all(func(t: Dictionary) -> bool: return t.has("i") and t.has("pos") and t.has("r")))
+	# The renderer's decor and the collision sites come from the same list, so they agree.
+	var drawn_trees := Z.all_decor("middlemost").filter(func(d: Array) -> bool: return d[0] == "tree")
+	check("as many drawn trees as collidable trees", drawn_trees.size() == trees.size(), "%d vs %d" % [drawn_trees.size(), trees.size()])
+	var t: Dictionary = trees[0]
+	var solids: Array = [[t["pos"], float(t["r"])]]
+	check("a standing tree blocks you", Z.blocked("middlemost", t["pos"], 14.0, [], solids))
+	check("with no solids the same spot is open", not Z.blocked("middlemost", t["pos"], 14.0, [], []))
+	var pushed := Z.resolve("middlemost", t["pos"], 14.0, [], solids)
+	check("you're pushed clear of the trunk", pushed.distance_to(t["pos"]) >= float(t["r"]) - 1.0, str(pushed))
+	# Bushes don't block but they slow you.
+	var bushes := Z.bush_sites("middlemost")
+	check("Middlemost has bushes", bushes.size() > 0, str(bushes.size()))
+	check("a bush never blocks movement", not Z.blocked("middlemost", bushes[0], 14.0, [], []))
+	check("a bush slows you when you're in it", Z.bush_slow("middlemost", bushes[0]) < 1.0)
+	check("open ground doesn't slow you", is_equal_approx(Z.bush_slow("middlemost", bushes[0] + Vector2(600, 600)), 1.0))
+	# Mobs are solid bodies you can't walk through.
+	check("a wilt has a solid body", E.is_solid("wilt") and E.body_radius("wilt") > 0.0)
+	var mob := Vector2(1000, 1000)
+	var pushed_off := Z.resolve("middlemost", mob, 14.0, [], [[mob, E.body_radius("wilt")]])
+	check("you're pushed out of a mob's body", pushed_off.distance_to(mob) >= E.body_radius("wilt") - 1.0, str(pushed_off))
+
+
+func _same_sites(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if (a[i]["pos"] as Vector2) != (b[i]["pos"] as Vector2):
+			return false
+	return true

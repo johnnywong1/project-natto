@@ -34,6 +34,8 @@ const ITEMS := {
 		"desc": "Refills a lantern. Used automatically when the lantern runs dry."},
 	"fern": {"name": "Fern Frond", "kind": "material", "color": Color("86d47e")},
 	"glowcap": {"name": "Glowcap", "kind": "material", "color": Color("9ff0e0")},
+	"lumber": {"name": "Lumber", "kind": "material", "color": Color("b07f4a"),
+		"desc": "Chopped from a tree with your sickle. A building material."},
 	# Offhand
 	"torch": {"name": "Torch", "kind": "equip", "slot": "offhand", "light": "torch", "color": Color("ff9f4a"),
 		"desc": "A small circle of warm light. Right-click to jab: sets enemies alight and melts ice. Rain puts it out; relight at any fire. Never needs refilling."},

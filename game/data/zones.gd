@@ -55,6 +55,9 @@ static func reload() -> void:
 	OUTDOOR.clear()
 	ORDER.clear()
 	_rooms.clear()
+	_decor_cache.clear()
+	_tree_cache.clear()
+	_bush_cache.clear()
 	var dir := DirAccess.open(ZONE_DIR)
 	if dir == null:
 		push_error("Zones: can't open %s" % ZONE_DIR)
@@ -308,11 +311,147 @@ static func plot_at(id: String, point: Vector2, reach: float) -> int:
 	return best
 
 
+# ---------------------------------------------------------------- scattered decor
+
+## Trunk collision radius of a tree at scale 1 (bigger trees block a touch more).
+const TREE_SOLID_BASE := 11.0
+## How close to a bush's centre counts as being "in" it, for the slow-down.
+const BUSH_RADIUS := 34.0
+## You move at this fraction of your normal speed while pushing through a bush.
+const BUSH_SLOW := 0.55
+
+static var _decor_cache: Dictionary = {}    # id -> Array of [kind, pos, scale, glow, glow_color]
+static var _tree_cache: Dictionary = {}     # id -> Array of {"i", "pos", "r", "scale"}
+static var _bush_cache: Dictionary = {}     # id -> Array of Vector2 (bush centres)
+
+## Every decoration in a zone, in one order the renderer and the collision code both agree
+## on: the hand-placed `decor` first, then the seed-scattered decor. Each entry is
+## [kind, pos, scale, glows, glow_color]. Trees and bushes get their hitbox and slow-down
+## from this list, so it must reproduce exactly what the player sees (see zone_view).
+static func all_decor(id: String) -> Array:
+	if _decor_cache.has(id):
+		return _decor_cache[id]
+	var zd := zone(id)
+	var out: Array = []
+	for d: Dictionary in zd.get("decor", []):
+		out.append([str(d["kind"]), d["pos"], float(d.get("scale", 1.0)), false, Color.WHITE])
+	# The scattered decor, placed by the zone's seed. Mirrors zone_view's walk exactly so
+	# that trees and bushes land where they're drawn.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(zd.get("seed", 0))
+	var size: Vector2 = zd["size"]
+	var avoid := _scatter_avoid(zd)
+	for rule: Dictionary in zd.get("scatter", []):
+		var kind := str(rule["kind"])
+		var margin := float(rule.get("margin", 60.0))
+		var scale_range: Vector2 = rule.get("scale", Vector2(1, 1))
+		var variants := int(rule.get("variants", 0))
+		var region: Variant = rule.get("region", null)
+		var glow_every := int(rule.get("glow_every", 0))
+		var gc: Color = rule.get("glow_color", Color.WHITE)
+		for i in int(rule["count"]):
+			var pos: Vector2
+			if region is Rect2:
+				var rr: Rect2 = region
+				pos = Vector2(rng.randf_range(rr.position.x, rr.end.x), rng.randf_range(rr.position.y, rr.end.y))
+			else:
+				pos = _spot(rng, avoid, size, margin)
+			var sc: float = float(rng.randi_range(0, variants - 1)) if variants > 0 else rng.randf_range(scale_range.x, scale_range.y)
+			out.append([kind, pos, sc, glow_every > 0 and i % glow_every == 0, gc])
+	_decor_cache[id] = out
+	return out
+
+
+## The trees that block movement and can be chopped: {"i": stump index, "pos", "r", "scale"}.
+## `i` is the tree's stable id (its order among the zone's trees), used to track stumps.
+static func tree_sites(id: String) -> Array:
+	if _tree_cache.has(id):
+		return _tree_cache[id]
+	var out: Array = []
+	var i := 0
+	for d: Array in all_decor(id):
+		if d[0] == "tree":
+			out.append({"i": i, "pos": d[1], "r": TREE_SOLID_BASE + 5.0 * float(d[2]), "scale": float(d[2])})
+			i += 1
+	_tree_cache[id] = out
+	return out
+
+
+## Bush centres (bushes don't block; they only slow you down).
+static func bush_sites(id: String) -> Array:
+	if _bush_cache.has(id):
+		return _bush_cache[id]
+	var out: Array = []
+	for d: Array in all_decor(id):
+		if d[0] == "bush":
+			out.append(d[1])
+	_bush_cache[id] = out
+	return out
+
+
+## 1.0 normally, BUSH_SLOW while standing in a bush.
+static func bush_slow(id: String, pos: Vector2) -> float:
+	for c: Vector2 in bush_sites(id):
+		if pos.distance_to(c) < BUSH_RADIUS:
+			return BUSH_SLOW
+	return 1.0
+
+
+## The rectangles the scatter avoids (exits, walls, lifts, fires, chests, ice, paths, the
+## farm, the well, keep_clear). Must match zone_view's old avoid set so seeds reproduce.
+static func _scatter_avoid(zd: Dictionary) -> Array:
+	var avoid: Array = []
+	for ex: Dictionary in zd.get("exits", []):
+		avoid.append((ex["rect"] as Rect2).grow(160.0))
+	for w: Rect2 in zd.get("walls", []):
+		avoid.append(w.grow(50.0))
+	for l: Dictionary in zd.get("lifts", []):
+		avoid.append(lift_rect(l["bottom"]).grow(70.0))
+		avoid.append(lift_rect(l["top"]).grow(70.0))
+		avoid.append(Rect2(l["top"], Vector2.ZERO).expand(l["bottom"]).grow(110.0))
+	for f: Vector2 in zd.get("fires", []):
+		avoid.append(Rect2(f - Vector2(70, 70), Vector2(140, 120)))
+	for c: Dictionary in zd.get("chests", []):
+		avoid.append(Rect2((c["pos"] as Vector2) - Vector2(80, 80), Vector2(160, 140)))
+	for ii: Vector2 in zd.get("ice", []):
+		avoid.append(Rect2(ii - Vector2(60, 60), Vector2(120, 120)))
+	for pth: Dictionary in zd.get("paths", []):
+		var pts := PackedVector2Array()
+		for pt: Vector2 in pth["points"]:
+			pts.append(pt)
+		var w: float = float(pth.get("width", 80.0))
+		for i in pts.size() - 1:
+			avoid.append(Rect2(pts[i], Vector2.ZERO).expand(pts[i + 1]).grow(w * 0.5 + 30.0))
+	if zd.has("farm"):
+		avoid.append(farm_rect(str(zd["id"])).grow(70.0))
+	if zd.has("well"):
+		avoid.append(Rect2((zd["well"] as Vector2) - Vector2(90, 120), Vector2(180, 170)))
+	for r: Rect2 in zd.get("keep_clear", []):
+		avoid.append(r)
+	return avoid
+
+
+## Picks a free spot for a scattered prop (up to 30 tries). Same walk as zone_view._spot.
+static func _spot(rng: RandomNumberGenerator, avoid: Array, size: Vector2, margin: float) -> Vector2:
+	var p := Vector2.ZERO
+	for attempt in 30:
+		p = Vector2(rng.randf_range(margin, size.x - margin), rng.randf_range(margin, size.y - margin))
+		var ok := true
+		for r: Rect2 in avoid:
+			if r.has_point(p):
+				ok = false
+				break
+		if ok:
+			return p
+	return p
+
+
 # ---------------------------------------------------------------- collision
 
-## Moves a circle out of cliffs, unmelted ice and the zone edge. `ice` is a list of
-## Vector2 centres of ice blocks that are still frozen.
-static func resolve(id: String, pos: Vector2, r: float, ice: Array) -> Vector2:
+## Moves a circle out of cliffs, unmelted ice, solid props (trees) and the zone edge.
+## `ice` is a list of Vector2 centres of still-frozen ice; `solids` is a list of
+## [Vector2 centre, float radius] circles (trees that aren't stumps right now).
+static func resolve(id: String, pos: Vector2, r: float, ice: Array, solids: Array = []) -> Vector2:
 	var z := zone(id)
 	var p := pos
 	var size: Vector2 = z["size"]
@@ -323,11 +462,18 @@ static func resolve(id: String, pos: Vector2, r: float, ice: Array) -> Vector2:
 		var min_d := r + ICE_RADIUS
 		if d.length() < min_d:
 			p = c + (d.normalized() if d.length() > 0.01 else Vector2.UP) * min_d
+	for s: Array in solids:
+		var sc: Vector2 = s[0]
+		var sr: float = s[1]
+		var d := p - sc
+		var min_d := r + sr
+		if d.length() < min_d:
+			p = sc + (d.normalized() if d.length() > 0.01 else Vector2.UP) * min_d
 	return p.clamp(Vector2(r, r), size - Vector2(r, r))
 
 
-static func blocked(id: String, pos: Vector2, r: float, ice: Array) -> bool:
-	return resolve(id, pos, r, ice).distance_to(pos) > 0.5
+static func blocked(id: String, pos: Vector2, r: float, ice: Array, solids: Array = []) -> bool:
+	return resolve(id, pos, r, ice, solids).distance_to(pos) > 0.5
 
 
 ## A cliff that runs into the edge of the zone is treated as running on past it, so
@@ -363,11 +509,11 @@ static func _out_of_rect(p: Vector2, r: float, rect: Rect2) -> Vector2:
 
 ## How far something of radius r can travel from `from` along `dir` before it hits a cliff,
 ## ice or the edge (used to plan a boar's charge).
-static func travel(id: String, from: Vector2, dir: Vector2, max_len: float, r: float, ice: Array) -> float:
+static func travel(id: String, from: Vector2, dir: Vector2, max_len: float, r: float, ice: Array, solids: Array = []) -> float:
 	var step := 8.0
 	var d := 0.0
 	while d + step <= max_len:
-		if blocked(id, from + dir * (d + step), r, ice):
+		if blocked(id, from + dir * (d + step), r, ice, solids):
 			return d
 		d += step
 	return max_len

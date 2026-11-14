@@ -30,6 +30,7 @@ signal vitals_changed
 signal weather_changed(zone: String)
 signal pickups_changed(zone: String)
 signal ice_changed(zone: String)
+signal stumps_changed(zone: String)
 signal lift_moved(zone: String, lift_id: String, from_end: String, to_end: String, seconds: float, riders: Array)
 signal lift_arrived(zone: String, lift_id: String)
 signal telegraph(zone: String, tg: Dictionary)
@@ -71,6 +72,9 @@ const DOOR_RANGE := 60.0
 ## How long an enemy reels after bumping into a raised shield (seconds).
 const CONTACT_BLOCK_STUN := 0.6
 const KICK_SLACK := 24.0           # the kicker saw the enemy a moment ago; it may have moved
+const TREE_CHOPS := 3              # sickle hits to fell a tree
+const TREE_REGROW := 150.0         # seconds before a stump grows back into a tree
+const TREE_LUMBER := 2             # lumber a felled tree gives
 
 # ---- Mirrored on every peer
 var clock := 6.0 * 60.0          # minutes since midnight
@@ -81,6 +85,7 @@ var pins: Dictionary = {}        # pin id -> {"zone", "pos", "owner", "name", "l
 var beacons: Dictionary = {}     # peer -> [zone, pos]
 var pickups: Dictionary = {}     # zone -> {pickup id: pos}
 var ice: Dictionary = {}         # zone -> {ice id: [pos, melted]}
+var stumps: Dictionary = {}      # zone -> {tree index: regrow_left} (a felled tree, growing back)
 var lifts: Dictionary = {}       # zone -> {lift id: "bottom" | "top"}
 var unlocked: Dictionary = {}    # house zone -> true, once someone has opened its lock
 var inventory: Array = []        # this player's bag (sent by the host)
@@ -90,6 +95,9 @@ var vitals: Dictionary = {}      # this player's hp, max_hp, fainted, torch_lit,
 var selected := 0                # which wheel segment this player is holding
 var my_zone := "middlemost"
 var arrive_pos := Vector2.ZERO
+## Solid mob bodies in the local player's zone, as [centre, radius] — rebuilt each frame by
+## world_view so the local player can't walk through enemies. Client-side only.
+var dyn_solids: Array = []
 var time_scale := 1.0
 var play_time := 0.0             # seconds this world has been played, over every session (saved)
 var session_time := 0.0          # seconds since this player entered the world
@@ -108,6 +116,8 @@ var enemies: Dictionary = {}     # zone -> Array of enemy dictionaries
 var shots: Array = []
 var attacks: Dictionary = {}     # attack id -> {"zone", "enemy", "damage", "strike_ms", "end_ms", "hit"}
 var lift_state: Dictionary = {}  # zone -> {lift id: {"at", "moving", "t", "to", "riders"}}
+var _chop: Dictionary = {}       # zone -> {tree index: chops left} (resets on load; not saved)
+var _solid_cache: Dictionary = {}  # zone -> Array of [pos, r] for trees that block right now
 var test_mode := false
 var ai_paused := false
 var _next_id := 1
@@ -169,6 +179,10 @@ func reset() -> void:
 	beacons.clear()
 	pickups.clear()
 	ice.clear()
+	stumps.clear()
+	dyn_solids.clear()
+	_chop.clear()
+	_solid_cache.clear()
 	lifts.clear()
 	unlocked.clear()
 	weather_log.clear()
@@ -326,7 +340,7 @@ func host_init(seed_value: int) -> void:
 			var size: Vector2 = zd["size"]
 			while pk.size() < count:
 				var p := Vector2(r.randf_range(220.0, size.x - 220.0), r.randf_range(220.0, size.y - 220.0))
-				if not Z.blocked(zid, p, 20.0, zd["ice"]) and not _on_plateau(zid, p):
+				if not Z.blocked(zid, p, 20.0, zd["ice"], tree_solids(zid)) and not _on_plateau(zid, p):
 					pk[_new_id()] = p
 		pickups[zid] = pk
 		var ic := {}
@@ -553,7 +567,7 @@ func _shield_summary(a: Dictionary) -> Dictionary:
 func full_state(for_id: int) -> Dictionary:
 	var a: Dictionary = avatars[for_id]
 	return {"clock": clock, "day": day, "weather": weather, "crops": crops, "pins": pins,
-		"pickups": pickups, "beacons": beacons, "ice": ice, "lifts": lifts, "unlocked": unlocked, "inv": a["inv"], "wheel": a["wheel"], "equip": a["equip"],
+		"pickups": pickups, "beacons": beacons, "ice": ice, "stumps": stumps, "lifts": lifts, "unlocked": unlocked, "inv": a["inv"], "wheel": a["wheel"], "equip": a["equip"],
 		"vitals": _vitals_of(a), "zone": a["zone"], "pos": a["pos"], "time_scale": time_scale,
 		"play_time": play_time}
 
@@ -567,6 +581,8 @@ func apply_full_state(s: Dictionary) -> void:
 	pickups = s["pickups"]
 	beacons = s["beacons"]
 	ice = s["ice"]
+	stumps = s.get("stumps", {})
+	_solid_cache.clear()
 	lifts = s["lifts"]
 	unlocked = s.get("unlocked", {})
 	inventory = s["inv"]
@@ -606,6 +622,7 @@ func _process(delta: float) -> void:
 	stats["frame_ms_max"] = maxf(float(stats["frame_ms_max"]), delta * 1000.0)
 	_tick_weather(delta)
 	_tick_crops(delta)
+	_tick_stumps(delta)
 	_tick_players(delta)
 	_tick_enemies(delta)
 	_tick_shots(delta)
@@ -717,6 +734,102 @@ func _crop_broadcast(zid: String, i: int) -> void:
 	crop_changed.emit(zid, i)
 
 
+# ---------------------------------------------------------------- trees and stumps
+
+## The trees that block movement in a zone right now, as [centre, radius] circles — every
+## tree except the ones that are currently stumps. Cached; rebuilt when a stump appears or
+## grows back. Runs on host and clients alike (both keep `stumps` in sync).
+func tree_solids(zid: String) -> Array:
+	if _solid_cache.has(zid):
+		return _solid_cache[zid]
+	var felled: Dictionary = stumps.get(zid, {})
+	var out: Array = []
+	for t: Dictionary in Z.tree_sites(zid):
+		if not felled.has(int(t["i"])):
+			out.append([t["pos"], float(t["r"])])
+	_solid_cache[zid] = out
+	return out
+
+
+## Everything the local player bumps into in a zone: standing trees plus solid mob bodies.
+## Returns a fresh array so callers can't corrupt the tree cache.
+func solids_for(zid: String) -> Array:
+	var out := tree_solids(zid).duplicate()
+	if zid == my_zone and not dyn_solids.is_empty():
+		out.append_array(dyn_solids)
+	return out
+
+
+## A tree is standing if it exists and isn't currently a stump.
+func _is_stump(zid: String, idx: int) -> bool:
+	return (stumps.get(zid, {}) as Dictionary).has(idx)
+
+
+## Felling or regrowing a tree: regrow > 0 makes it a stump, regrow <= 0 clears the stump.
+## Updates everyone, redraws, and invalidates the collision cache for the zone.
+func _set_stump(zid: String, idx: int, regrow: float) -> void:
+	var d: Dictionary = stumps.get(zid, {})
+	if regrow > 0.0:
+		d[idx] = regrow
+		stumps[zid] = d
+	else:
+		d.erase(idx)
+		if d.is_empty():
+			stumps.erase(zid)
+		else:
+			stumps[zid] = d
+	_solid_cache.erase(zid)
+	if is_host():
+		_to_clients(&"_rpc_stump", [zid, idx, regrow])
+	stumps_changed.emit(zid)
+
+
+## Stumps count down and grow back into trees.
+func _tick_stumps(delta: float) -> void:
+	for zid: String in stumps.keys():
+		for idx: int in (stumps[zid] as Dictionary).keys():
+			var left: float = float(stumps[zid][idx]) - delta
+			if left <= 0.0:
+				_set_stump(zid, idx, 0.0)
+			else:
+				stumps[zid][idx] = left
+
+
+## A sickle swing near a tree chops it; TREE_CHOPS swings fell it, dropping lumber and
+## leaving a stump that grows back. Chops the single nearest standing tree in the swing.
+func _try_chop(id: int, zid: String, swing: Dictionary, from: Vector2) -> void:
+	var best := -1
+	var best_d := INF
+	var best_pos := Vector2.ZERO
+	for t: Dictionary in Z.tree_sites(zid):
+		var idx := int(t["i"])
+		if _is_stump(zid, idx):
+			continue
+		var pos: Vector2 = t["pos"]
+		if not HB.hits(swing, HB.circle(pos, float(t["r"]) + 6.0)):
+			continue
+		var d := from.distance_to(pos)
+		if d < best_d:
+			best_d = d
+			best = idx
+			best_pos = pos
+	if best < 0:
+		return
+	var prog: Dictionary = _chop.get(zid, {})
+	var left := int(prog.get(best, TREE_CHOPS)) - 1
+	_fx_zone(zid, "hit", best_pos, best_pos, id, "sickle")
+	if left > 0:
+		prog[best] = left
+		_chop[zid] = prog
+		return
+	prog.erase(best)                       # felled
+	_chop[zid] = prog
+	Items.give(avatars[id]["inv"], avatars[id]["wheel"], "lumber", TREE_LUMBER)
+	_send_inventory(id)
+	_set_stump(zid, best, TREE_REGROW)
+	_toast_to(id, "+%d Lumber" % TREE_LUMBER)
+
+
 # ---------------------------------------------------------------- players: health, lights
 
 func _tick_players(delta: float) -> void:
@@ -826,11 +939,33 @@ func _tick_enemies(delta: float) -> void:
 		var frozen := frozen_ice(zid)
 		for en: Dictionary in list:
 			_tick_enemy(zid, en, delta, frozen)
+		_separate_enemies(zid, list)
 		enemies[zid] = list.filter(func(en: Dictionary) -> bool: return float(en["pop"]) > 0.0 or int(en["hp"]) > 0)
 	var now := Time.get_ticks_msec()
 	for atk: int in attacks.keys():
 		if now > int(attacks[atk]["end_ms"]) + 3000:
 			attacks.erase(atk)
+
+
+## Solid mobs don't overlap: nudge any two that do apart (and keep them out of trees/cliffs).
+## A light O(n^2) pass — zones hold only a handful of enemies at once.
+func _separate_enemies(zid: String, list: Array) -> void:
+	for i in list.size():
+		var a: Dictionary = list[i]
+		if int(a["hp"]) <= 0 or not E.is_solid(str(a["kind"])):
+			continue
+		var ra := E.body_radius(str(a["kind"]))
+		for j in range(i + 1, list.size()):
+			var b: Dictionary = list[j]
+			if int(b["hp"]) <= 0 or not E.is_solid(str(b["kind"])):
+				continue
+			var rb := E.body_radius(str(b["kind"]))
+			var d: Vector2 = (b["pos"] as Vector2) - (a["pos"] as Vector2)
+			var overlap := ra + rb - d.length()
+			if overlap > 0.0:
+				var push := (d.normalized() if d.length() > 0.01 else Vector2.RIGHT) * (overlap * 0.5)
+				a["pos"] = Z.resolve(zid, (a["pos"] as Vector2) - push, ra, frozen_ice(zid))
+				b["pos"] = Z.resolve(zid, (b["pos"] as Vector2) + push, rb, frozen_ice(zid))
 
 
 func _spawn_enemy(zid: String, kind: String, at: Vector2) -> Dictionary:
@@ -849,7 +984,7 @@ func _spawn_enemy(zid: String, kind: String, at: Vector2) -> Dictionary:
 					1: pos = Vector2(_rng.randf_range(100, size.x - 100), size.y - 100)
 					2: pos = Vector2(100, _rng.randf_range(100, size.y - 100))
 					_: pos = Vector2(size.x - 100, _rng.randf_range(100, size.y - 100))
-			var ok := not Z.blocked(zid, pos, r, frozen_ice(zid))
+			var ok := not Z.blocked(zid, pos, r, frozen_ice(zid), tree_solids(zid))
 			for ex: Dictionary in Z.zone(zid)["exits"]:
 				if (ex["rect"] as Rect2).grow(260.0).has_point(pos):
 					ok = false
@@ -918,7 +1053,7 @@ func _tick_enemy(zid: String, en: Dictionary, delta: float, frozen: Array) -> vo
 		_:
 			if not ai_paused:
 				pos = _enemy_move(zid, en, info, pos, delta)
-	en["pos"] = Z.resolve(zid, pos, r, frozen)
+	en["pos"] = Z.resolve(zid, pos, r, frozen, tree_solids(zid))
 
 
 func _nearest_player(zid: String, pos: Vector2, within: float) -> int:
@@ -1006,7 +1141,7 @@ func _begin_windup(zid: String, en: Dictionary, info: Dictionary, target: Vector
 	var active := 0.3
 	match str(info["attack"]):
 		"charge":
-			var t := Z.travel(zid, pos, dir, float(info["length"]), float(info["radius"]), frozen_ice(zid))
+			var t := Z.travel(zid, pos, dir, float(info["length"]), float(info["radius"]), frozen_ice(zid), tree_solids(zid))
 			en["travel"] = t
 			en["moved"] = 0.0
 			tg["length"] = t
@@ -1291,7 +1426,8 @@ func c_use(slot: int, aim: Vector2, pos_now: Vector2, facing_now: Vector2) -> vo
 			for en: Dictionary in enemies[zid]:
 				if int(en["hp"]) > 0 and HB.hits(swing, HB.enemy_hurtbox(en["kind"], en["pos"])):
 					_hurt_enemy(zid, en, 1, pos, id, ignite)
-			_try_harvest(id, zid, front)
+			if not _try_harvest(id, zid, front):
+				_try_chop(id, zid, swing, pos)
 		"can":
 			if _near_water(zid, pos):
 				_refill(id)
@@ -1922,6 +2058,9 @@ func c_debug(cmd: String, args: Array) -> void:
 		"fuel":
 			a["fuel"] = float(args[0])
 			a["dirty"] = true
+		"regrow":
+			for idx: int in (stumps.get(zid, {}) as Dictionary).keys():   # grow every stump back now
+				_set_stump(zid, idx, 0.0)
 		"shield_hp":
 			# Sets the worn shield's health; an optional second argument holds it there for
 			# that many seconds (no recovery), so a test's timing doesn't depend on lag.
@@ -2023,6 +2162,22 @@ func _rpc_ice(zid: String, iid: int, melted: bool) -> void:
 	if zi.has(iid):
 		zi[iid][1] = melted
 	ice_changed.emit(zid)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _rpc_stump(zid: String, idx: int, regrow: float) -> void:
+	var d: Dictionary = stumps.get(zid, {})
+	if regrow > 0.0:
+		d[idx] = regrow
+		stumps[zid] = d
+	else:
+		d.erase(idx)
+		if d.is_empty():
+			stumps.erase(zid)
+		else:
+			stumps[zid] = d
+	_solid_cache.erase(zid)
+	stumps_changed.emit(zid)
 
 
 @rpc("authority", "call_remote", "reliable")
